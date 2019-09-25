@@ -3,6 +3,7 @@ module github.com/datawire/ambassador
 go 1.13
 
 require (
+	github.com/envoyproxy/go-control-plane v0.5.0
 	github.com/envoyproxy/protoc-gen-validate v0.0.15-0.20190405222122-d6164de49109
 	github.com/gogo/googleapis v1.1.0
 	github.com/gogo/protobuf v1.2.1
