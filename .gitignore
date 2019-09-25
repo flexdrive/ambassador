@@ -20,6 +20,9 @@ teleproxy
 kat/kat/client
 /.docker_port_forward
 
+# binaries
+/cmd/ambex/ambex
+
 /kat/docker/server/kat-server
 /kat/sandbox/grpc_auth/docker-compose.yml
 /kat/sandbox/grpc_web/docker-compose.yaml

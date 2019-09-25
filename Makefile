@@ -461,6 +461,10 @@ kat-server.docker: $(wildcard kat/docker/server/*) kat/docker/server/kat-server 
 kat/docker/server/kat-server: $(wildcard cmd/kat-server/* cmd/kat-server/*/*) pkg/apis/kat/echo.pb.go
 	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o $@ ./cmd/kat-server
 
+ambex: cmd/ambex/ambex 
+cmd/ambex/ambex: $(wildcard cmd/ambex/*.go)
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o $@ cmd/ambex/*.go
+
 docker-images: mypy ambassador-docker-image
 
 docker-push: docker-images
