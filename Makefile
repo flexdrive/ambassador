@@ -113,7 +113,7 @@ ENVOY_FILE ?= envoy-bin/envoy-static-stripped
   BASE_ENVOY_RELVER ?= 3
   # Increment BASE_GO_RELVER on changes to `Dockerfile.base-go`
   BASE_GO_RELVER    ?= 15
-  # Increment BASE_PY_RELVER on changes to `Dockerfile.base-py`, `releng/*`, `multi/requirements.txt`, `ambassador/requirements.txt`
+  # Increment BASE_PY_RELVER on changes to `Dockerfile.base-py`, `releng/*`, `ambassador/requirements.txt`
   BASE_PY_RELVER    ?= 15
 
   BASE_DOCKER_REPO ?= quay.io/datawire/ambassador-base$(if $(IS_PRIVATE),-private)
@@ -809,7 +809,7 @@ venv/bin/ambassador: venv/bin/activate ambassador/requirements.txt
 	@releng/install-py.sh dev install ambassador/requirements.txt
 	@releng/fix_kube_client
 
-venv/bin/activate: dev-requirements.txt multi/requirements.txt
+venv/bin/activate: dev-requirements.txt
 	test -d venv || virtualenv venv --python python3
 	@releng/install-py.sh dev requirements $^
 	@releng/install-py.sh dev install $^
