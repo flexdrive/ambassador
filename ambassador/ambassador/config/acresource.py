@@ -87,7 +87,7 @@ class ACResource (Resource):
         new_name = name or other.name
         new_apiVersion = apiVersion or other.apiVersion
 
-        return super().from_resource(other, rkey=rkey, location=location, kind=kind,
+        return super().from_resource(other, rkey=rkey, location=location, kind=kind,   # type: ignore
                                      name=new_name, apiVersion=new_apiVersion,
                                      serialization=serialization, **kwargs)
 
