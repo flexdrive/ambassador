@@ -112,15 +112,50 @@ ENVOY_FILE ?= envoy-bin/envoy-static-stripped
   # Increment BASE_ENVOY_RELVER on changes to `Dockerfile.base-envoy`, or Envoy recipes
   BASE_ENVOY_RELVER ?= 3
   # Increment BASE_GO_RELVER on changes to `Dockerfile.base-go`
-  BASE_GO_RELVER    ?= 15
+  BASE_GO_RELVER    ?= 16
   # Increment BASE_PY_RELVER on changes to `Dockerfile.base-py`, `releng/*`, `python/requirements.txt`
-  BASE_PY_RELVER    ?= 15
+  BASE_PY_RELVER    ?= 16
 
   BASE_DOCKER_REPO ?= quay.io/datawire/ambassador-base$(if $(IS_PRIVATE),-private)
   BASE_ENVOY_IMAGE ?= $(BASE_DOCKER_REPO):envoy-$(BASE_ENVOY_RELVER).$(ENVOY_COMMIT).$(ENVOY_COMPILATION_MODE)
   BASE_GO_IMAGE    ?= $(BASE_DOCKER_REPO):go-$(BASE_GO_RELVER)
   BASE_PY_IMAGE    ?= $(BASE_DOCKER_REPO):py-$(BASE_PY_RELVER)
 # END LIST OF VARIABLES REQUIRING `make docker-update-base`.
+
+#### Test service Dockerfile stuff.
+# The test services live in subdirectories of test-services. TEST_SERVICE_ROOTS
+# is the list of these directories.
+
+TEST_SERVICE_ROOTS = $(notdir $(wildcard test-services/*))
+
+# TEST_SERVICE_IMAGES maps each TEST_SERVICE_ROOT to test-$root.docker, since
+# those are the names of the individual targets. We also add the auth-tls
+# target here, by hand -- it has a special rule since it's also built from the
+# test-services/auth directory.
+TEST_SERVICE_IMAGES = $(patsubst %,test-%.docker,$(TEST_SERVICE_ROOTS) auth-tls)
+
+# Set default tag values...
+docker.tag.release = $(AMBASSADOR_DOCKER_TAG)
+docker.tag.local = $(AMBASSADOR_DOCKER_TAG)
+
+TEST_SERVICE_VERSION ?= 0.0.3
+
+# ...then set overrides for the test services.
+test-%.docker.tag.release: docker.tag.release = quay.io/datawire/test_services:$(notdir $*)-$(TEST_SERVICE_VERSION)
+
+LOCAL_REPO = $(if $(filter-out -,$(DOCKER_REGISTRY)),$(DOCKER_REGISTRY)/test_services,test_services)
+test-%.docker.tag.local: docker.tag.local = $(LOCAL_REPO):$(notdir $*)-$(GIT_DESCRIPTION)
+
+# ...and define some TEST_SERVICE_*_TAGS.
+TEST_SERVICE_LOCAL_TAGS = $(addsuffix .tag.local,$(TEST_SERVICE_IMAGES))
+TEST_SERVICE_RELEASE_TAGS = $(addsuffix .tag.release,$(TEST_SERVICE_IMAGES))
+
+ifneq ($(DOCKER_REGISTRY), -)
+TEST_SERVICE_LOCAL_PUSHES = $(addsuffix .push.local,$(TEST_SERVICE_IMAGES))
+TEST_SERVICE_RELEASE_PUSHES = $(addsuffix .push.release,$(TEST_SERVICE_IMAGES))
+endif
+
+#### end test service stuff
 
 # Default to _NOT_ using Kubernaut. At Datawire, we can set this to true,
 # but outside, it works much better to assume that user has set up something
@@ -144,6 +179,8 @@ KAT_SERVER_DOCKER_REPO ?= $(if $(filter-out -,$(DOCKER_REGISTRY)),$(DOCKER_REGIS
 
 KAT_CLIENT_DOCKER_IMAGE ?= $(KAT_CLIENT_DOCKER_REPO):$(AMBASSADOR_DOCKER_TAG)
 KAT_SERVER_DOCKER_IMAGE ?= $(KAT_SERVER_DOCKER_REPO):$(AMBASSADOR_DOCKER_TAG)
+
+KAT_IMAGE_PULL_POLICY ?= Always
 
 KAT_CLIENT ?= venv/bin/kat_client
 
@@ -176,14 +213,20 @@ all:
 
 include build-aux/prelude.mk
 include build-aux/var.mk
+include build-aux/docker.mk
 
-clean: clean-test envoy-build-container.txt.clean
+# clean_docker_images could just be a fixed list of the images that we
+# generate, but writing that fixed list would require a human to
+# figure out what that complete list is.
+clean_docker_images  = $(wildcard *.docker)
+clean_docker_images += $(patsubst %.tag.release,%,$(wildcard *.docker.tag.release))
+clean_docker_images += $(patsubst %.tag.local,%,$(wildcard *.docker.tag.local))
+clean: clean-test envoy-build-container.txt.clean $(addsuffix .clean,$(clean_docker_images))
 	rm -rf docs/_book docs/_site docs/package-lock.json
 	rm -rf helm/*.tgz
 	rm -rf app.json
 	rm -rf venv/bin/ambassador
 	rm -rf python/ambassador/VERSION.py*
-	rm -f *.docker
 	rm -rf python/build python/dist python/ambassador.egg-info python/__pycache__
 	find . \( -name .coverage -o -name .cache -o -name __pycache__ \) -print0 | xargs -0 rm -rf
 	find . \( -name *.log \) -print0 | xargs -0 rm -rf
@@ -196,6 +239,7 @@ clean: clean-test envoy-build-container.txt.clean
 	rm -f tools/sandbox/http_auth/docker-compose.yml
 	rm -f tools/sandbox/grpc_auth/docker-compose.yml
 	rm -f tools/sandbox/grpc_web/docker-compose.yaml tools/sandbox/grpc_web/*_pb.js
+	rm -rf pkg/apis.envoy.tmp/
 	rm -rf envoy-bin
 	rm -f envoy-build-image.txt
 
@@ -415,6 +459,26 @@ base-go.docker: Dockerfile.base-go $(var.)BASE_GO_IMAGE $(WRITE_IFCHANGED)
 	fi
 	@docker image inspect $(BASE_GO_IMAGE) --format='{{.Id}}' | $(WRITE_IFCHANGED) $@
 
+test-%.docker: test-services/%/Dockerfile $(MOVE_IFCHANGED) FORCE
+	docker build --quiet --iidfile=$@.tmp test-services/$*
+	$(MOVE_IFCHANGED) $@.tmp $@
+
+test-auth-tls.docker: test-services/auth/Dockerfile $(MOVE_IFCHANGED) FORCE
+	docker build --quiet --build-arg TLS=--tls --iidfile=$@.tmp test-services/auth
+	$(MOVE_IFCHANGED) $@.tmp $@
+
+test-services: $(TEST_SERVICE_IMAGES) $(TEST_SERVICE_LOCAL_TAGS) $(TEST_SERVICE_LOCAL_PUSHES)
+test-services-release: $(TEST_SERVICE_IMAGES) $(TEST_SERVICE_RELEASE_TAGS) $(TEST_SERVICE_RELEASE_PUSHES)
+.PHONY: test-services test-services-release
+
+# XXX: Why doesn't just test-%.docker.push: test-%.docker.push.local work??
+#
+# This three-element form of $(addsuffix ...) is kind of an implicit foreach. 
+# We're generating a rule for each word in $(TEST_SERVICE_IMAGES).
+TEST_SERVICE_PUSH_TARGETS = $(addsuffix .push,$(TEST_SERVICE_IMAGES))
+$(TEST_SERVICE_PUSH_TARGETS): %.push: %.push.local
+.PHONY: $(TEST_SERVICE_PUSH_TARGETS)
+
 docker-base-images:
 	@if [ -n "$(AMBASSADOR_DEV)" ]; then echo "Do not run this from a dev shell" >&2; exit 1; fi
 	$(MAKE) base-envoy.docker base-go.docker base-py.docker
@@ -476,14 +540,24 @@ else
 endif
 
 docker-push-kat-client: build/kat/client
+ifeq ($(DOCKER_REGISTRY),-)
+	@echo "No DOCKER_REGISTRY set"
+else
 	@echo 'PUSH $(KAT_CLIENT_DOCKER_IMAGE)'
 	@set -o pipefail; \
 		docker push $(KAT_CLIENT_DOCKER_IMAGE) | python releng/linify.py push.log
+endif
 
 docker-push-kat-server: build/kat/server
+ifeq ($(DOCKER_REGISTRY),-)
+	@echo "No DOCKER_REGISTRY set"
+else
 	@echo 'PUSH $(KAT_SERVER_DOCKER_IMAGE)'
 	@set -o pipefail; \
 		docker push $(KAT_SERVER_DOCKER_IMAGE) | python releng/linify.py push.log
+endif
+
+docker-push-kat: docker-push-kat-client docker-push-kat-server
 
 # TODO: validate version is conformant to some set of rules might be a good idea to add here
 python/ambassador/VERSION.py: FORCE $(WRITE_IFCHANGED)
@@ -619,6 +693,7 @@ test: setup-develop
 	KUBECONFIG="$(KUBECONFIG)" \
 	KAT_CLIENT_DOCKER_IMAGE="$(KAT_CLIENT_DOCKER_IMAGE)" \
 	KAT_SERVER_DOCKER_IMAGE="$(KAT_SERVER_DOCKER_IMAGE)" \
+	KAT_IMAGE_PULL_POLICY="$(KAT_IMAGE_PULL_POLICY)" \
 	PATH="$(shell pwd)/venv/bin:$(PATH)" \
 	bash ../releng/run-tests.sh
 
@@ -668,7 +743,11 @@ release:
 # The version numbers of `protoc` (in this Makefile),
 # `protoc-gen-gogofast` (in go.mod), and `protoc-gen-validate` (in
 # go.mod) are based on
-# https://github.com/envoyproxy/go-control-plane/blob/master/Dockerfile.ci
+# https://github.com/envoyproxy/go-control-plane/blob/0e75602d5e36e96eafbe053999c0569edec9fe07/Dockerfile.ci
+# (since that commit most closely corresponds to our ENVOY_COMMIT).
+# Additionally, the package names of those programs are mentioned in
+# ./go/pin.go, so that `go mod tidy` won't make the go.mod file forget
+# about them.
 
 PROTOC_VERSION = 3.5.1
 PROTOC_PLATFORM = $(patsubst darwin,osx,$(GOOS))-$(patsubst amd64,x86_64,$(patsubst 386,x86_32,$(GOARCH)))
@@ -686,28 +765,50 @@ venv/bin/protoc-gen-validate: go.mod $(FLOCK) | venv/bin/activate
 
 # Search path for .proto files
 gomoddir = $(shell $(FLOCK) go.mod go list $1/... >/dev/null 2>/dev/null; $(FLOCK) go.mod go list -m -f='{{.Dir}}' $1)
-# This list is based 'imports=()' in https://github.com/envoyproxy/go-control-plane/blob/master/build/generate_protos.sh
+# This list is based on 'imports=()' in https://github.com/envoyproxy/go-control-plane/blob/0e75602d5e36e96eafbe053999c0569edec9fe07/build/generate_protos.sh
+# (since that commit most closely corresponds to our ENVOY_COMMIT).
+#
+# However, we make the following edits:
+#  - "github.com/gogo/protobuf/protobuf" instead of "github.com/gogo/protobuf" (we add an
+#    extra "/protobuf" at the end).  I have no idea why.  I have no idea how the
+#    go-control-plane version works without the extra "/protobuf" at the end; it looks to
+#    me like they would need it too.  It makes no sense.
+#  - Mess with the paths under "istio.io/gogo-genproto", since in 929161c and ee07f27 they
+#    moved the .proto files all around.  The reason this affects us and not
+#    go-control-plane is that our newer Envoy needs googleapis'
+#    "google/api/expr/v1alpha1/", which was added in 32e3935 (.pb.go files) and ee07f27
+#    (.proto files).
 imports += $(CURDIR)/envoy-src/api
 imports += $(call gomoddir,github.com/envoyproxy/protoc-gen-validate)
-imports += $(call gomoddir,github.com/gogo/googleapis)
 imports += $(call gomoddir,github.com/gogo/protobuf)/protobuf
-imports += $(call gomoddir,istio.io/gogo-genproto)
-imports += $(call gomoddir,istio.io/gogo-genproto)/prometheus
+imports += $(call gomoddir,istio.io/gogo-genproto)/common-protos
+imports += $(call gomoddir,istio.io/gogo-genproto)/common-protos/github.com/prometheus/client_model
+imports += $(call gomoddir,istio.io/gogo-genproto)/common-protos/github.com/census-instrumentation/opencensus-proto/src
 
 # Map from .proto files to Go package names
-# This list is based 'mappings=()' in https://github.com/envoyproxy/go-control-plane/blob/master/build/generate_protos.sh
+# This list is based on 'mappings=()' in https://github.com/envoyproxy/go-control-plane/blob/0e75602d5e36e96eafbe053999c0569edec9fe07/build/generate_protos.sh
+# (since that commit most closely corresponds to our ENVOY_COMMIT).
+#
+# However, we make the following edits:
+#  - Add an entry for "google/api/expr/v1alpha1/syntax.proto", which didn't exist yet in
+#    the version that go-control-plane uses (see the comment around "imports" above).
 mappings += gogoproto/gogo.proto=github.com/gogo/protobuf/gogoproto
-mappings += google/api/annotations.proto=github.com/gogo/googleapis/google/api
+mappings += google/api/annotations.proto=istio.io/gogo-genproto/googleapis/google/api
+mappings += google/api/expr/v1alpha1/syntax.proto=istio.io/gogo-genproto/googleapis/google/api/expr/v1alpha1
+mappings += google/api/http.proto=istio.io/gogo-genproto/googleapis/google/api
 mappings += google/protobuf/any.proto=github.com/gogo/protobuf/types
 mappings += google/protobuf/duration.proto=github.com/gogo/protobuf/types
 mappings += google/protobuf/empty.proto=github.com/gogo/protobuf/types
 mappings += google/protobuf/struct.proto=github.com/gogo/protobuf/types
 mappings += google/protobuf/timestamp.proto=github.com/gogo/protobuf/types
 mappings += google/protobuf/wrappers.proto=github.com/gogo/protobuf/types
-mappings += google/rpc/status.proto=github.com/gogo/googleapis/google/rpc
+mappings += google/rpc/code.proto=istio.io/gogo-genproto/googleapis/google/rpc
+mappings += google/rpc/error_details.proto=istio.io/gogo-genproto/googleapis/google/rpc
+mappings += google/rpc/status.proto=istio.io/gogo-genproto/googleapis/google/rpc
 mappings += metrics.proto=istio.io/gogo-genproto/prometheus
 mappings += opencensus/proto/trace/v1/trace.proto=istio.io/gogo-genproto/opencensus/proto/trace/v1
 mappings += opencensus/proto/trace/v1/trace_config.proto=istio.io/gogo-genproto/opencensus/proto/trace/v1
+mappings += validate/validate.proto=github.com/envoyproxy/protoc-gen-validate/validate
 mappings += $(shell find $(CURDIR)/envoy-src/api/envoy -type f -name '*.proto' | sed -E 's,^$(CURDIR)/envoy-src/api/((.*)/[^/]*),\1=github.com/datawire/ambassador/pkg/apis/\2,')
 
 joinlist=$(if $(word 2,$2),$(firstword $2)$1$(call joinlist,$1,$(wordlist 2,$(words $2),$2)),$2)
