@@ -98,9 +98,6 @@ class V2Bootstrap(dict):
                 }
             ]
 
-            if config.ir.statsd['prefix']:
-                self['stats_sinks']['config']['prefix'] = config.ir.statsd['prefix']
-
             self['stats_flush_interval'] = {
                 'seconds': config.ir.statsd['interval']
             }
