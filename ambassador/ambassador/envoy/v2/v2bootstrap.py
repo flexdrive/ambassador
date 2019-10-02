@@ -81,6 +81,7 @@ class V2Bootstrap(dict):
 
         if config.ir.statsd['enabled']:
             name = 'envoy.dog_statsd' if config.ir.statsd['dogstatsd'] else 'envoy.statsd'
+            prefix = "%s-%s" % ('envoy', config.ir.ambassador_namespace)
             self['stats_sinks'] = [
                 {
                     'name': name,
@@ -91,7 +92,8 @@ class V2Bootstrap(dict):
                                 'address': config.ir.statsd['ip'],
                                 'port_value': 8125
                             }
-                        }
+                        },
+                        'prefix': prefix
                     }
                 }
             ]

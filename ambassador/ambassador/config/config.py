@@ -33,10 +33,10 @@ from .acmapping import ACMapping
 
 
 #############################################################################
-## config.py -- the main configuration parser for Ambassador
+# config.py -- the main configuration parser for Ambassador
 ##
-## Ambassador configures itself by creating a new Config object, which calls
-## Config.__init__().
+# Ambassador configures itself by creating a new Config object, which calls
+# Config.__init__().
 
 # Custom types
 # StringOrList is either a string or a list of strings.
@@ -47,9 +47,12 @@ class Config:
     # CLASS VARIABLES
     # When using multiple Ambassadors in one cluster, use AMBASSADOR_ID to distinguish them.
     ambassador_id: ClassVar[str] = os.environ.get('AMBASSADOR_ID', 'default')
-    ambassador_namespace: ClassVar[str] = os.environ.get('AMBASSADOR_NAMESPACE', 'default')
-    single_namespace: ClassVar[bool] = bool(os.environ.get('AMBASSADOR_SINGLE_NAMESPACE'))
-    enable_endpoints: ClassVar[bool] = not bool(os.environ.get('AMBASSADOR_DISABLE_ENDPOINTS'))
+    ambassador_namespace: ClassVar[str] = os.environ.get(
+        'AMBASSADOR_NAMESPACE', 'default')
+    single_namespace: ClassVar[bool] = bool(
+        os.environ.get('AMBASSADOR_SINGLE_NAMESPACE'))
+    enable_endpoints: ClassVar[bool] = not bool(
+        os.environ.get('AMBASSADOR_DISABLE_ENDPOINTS'))
 
     StorageByKind: ClassVar[Dict[str, str]] = {
         'authservice': "auth_configs",
@@ -63,7 +66,7 @@ class Config:
         'tracingservice': "tracing_configs",
     }
 
-    KnativeResources = { 'ClusterIngress', 'KnativeIngress' }
+    KnativeResources = {'ClusterIngress', 'KnativeIngress'}
 
     SupportedVersions: ClassVar[Dict[str, str]] = {
         "v0": "is deprecated, consider upgrading",
@@ -100,36 +103,40 @@ class Config:
     fatal_errors: int
     object_errors: int
 
-    def __init__(self, schema_dir_path: Optional[str]=None) -> None:
+    def __init__(self, schema_dir_path: Optional[str] = None) -> None:
 
         self.logger = logging.getLogger("ambassador.config")
 
         if not schema_dir_path:
             # Note that this "resource_filename" has to do with setuptool packages, not
             # with our ACResource class.
-            schema_dir_path = resource_filename(Requirement.parse("ambassador"), "schemas")
+            schema_dir_path = resource_filename(
+                Requirement.parse("ambassador"), "schemas")
 
         self.statsd: Dict[str, Any] = {
             'enabled': (os.environ.get('STATSD_ENABLED', '').lower() == 'true'),
-            'prefix': (os.environ.get('STATSD_PREFIX', '').lower() == 'true'),
             'dogstatsd': (os.environ.get('DOGSTATSD', '').lower() == 'true')
         }
 
         if self.statsd['enabled']:
-            self.statsd['interval'] = os.environ.get('STATSD_FLUSH_INTERVAL', '1')
+            self.statsd['interval'] = os.environ.get(
+                'STATSD_FLUSH_INTERVAL', '1')
 
             statsd_host = os.environ.get('STATSD_HOST', 'statsd-sink')
             try:
                 resolved_ip = socket.gethostbyname(statsd_host)
                 self.statsd['ip'] = resolved_ip
             except socket.gaierror as e:
-                self.logger.error("Unable to resolve {} to IP : {}".format(statsd_host, e))
-                self.logger.error("Stats will not be exported to {}".format(statsd_host))
+                self.logger.error(
+                    "Unable to resolve {} to IP : {}".format(statsd_host, e))
+                self.logger.error(
+                    "Stats will not be exported to {}".format(statsd_host))
                 self.statsd['enabled'] = False
 
         self.schema_dir_path = schema_dir_path
 
-        self.logger.debug("SCHEMA DIR    %s" % os.path.abspath(self.schema_dir_path))
+        self.logger.debug("SCHEMA DIR    %s" %
+                          os.path.abspath(self.schema_dir_path))
 
         self._reset()
 
@@ -167,7 +174,7 @@ class Config:
                                               Config.ambassador_namespace)
 
     def __str__(self) -> str:
-        s = [ "<Config:" ]
+        s = ["<Config:"]
 
         for kind, configs in self.config.items():
             s.append("  %s:" % kind)
@@ -193,7 +200,7 @@ class Config:
             sd = dict(v)    # Shallow copy
 
             if '_errors' in v:
-                sd['_errors'] = [ x.as_dict() for x in v._errors ]
+                sd['_errors'] = [x.as_dict() for x in v._errors]
 
             od['_sources'][k] = sd
 
@@ -219,7 +226,8 @@ class Config:
     def good_ambassador_id(self, resource: dict):
         resource_kind = resource.get('kind', '').lower()
         if not self.ambassador_id_required(resource_kind):
-            self.logger.debug(f"Resource: {resource_kind} does not require an Ambassador ID")
+            self.logger.debug(
+                f"Resource: {resource_kind} does not require an Ambassador ID")
             return True
 
         # Is an ambassador_id present in this object?
@@ -230,12 +238,13 @@ class Config:
             # but the jsonschema will allow only a string or a list,
             # and guess what? Strings are Iterables.
             if type(allowed_ids) != list:
-                allowed_ids = typecast(StringOrList, [ allowed_ids ])
+                allowed_ids = typecast(StringOrList, [allowed_ids])
 
             if Config.ambassador_id in allowed_ids:
                 return True
             else:
-                self.logger.debug(f"Ambassador ID {Config.ambassador_id} does not exist in allowed IDs {allowed_ids}")
+                self.logger.debug(
+                    f"Ambassador ID {Config.ambassador_id} does not exist in allowed IDs {allowed_ids}")
                 self.logger.debug(resource)
                 return False
 
@@ -261,7 +270,8 @@ class Config:
             if not self.good_ambassador_id(resource):
                 continue
 
-            self.logger.debug("LOAD_ALL: %s @ %s" % (resource, resource.location))
+            self.logger.debug("LOAD_ALL: %s @ %s" %
+                              (resource, resource.location))
 
             rc = self.process(resource)
 
@@ -269,16 +279,19 @@ class Config:
                 # Object error. Not good but we'll allow the system to start.
                 self.post_error(rc, resource=resource)
 
-        self.logger.debug("LOAD_ALL: processed %d resource%s" % (rcount, "" if (rcount == 1) else "s"))
+        self.logger.debug("LOAD_ALL: processed %d resource%s" %
+                          (rcount, "" if (rcount == 1) else "s"))
 
         if self.fatal_errors:
             # Kaboom.
-            raise Exception("ERROR ERROR ERROR Unparseable configuration; exiting")
+            raise Exception(
+                "ERROR ERROR ERROR Unparseable configuration; exiting")
 
         if self.errors:
-            self.logger.error("ERROR ERROR ERROR Starting with configuration errors")
+            self.logger.error(
+                "ERROR ERROR ERROR Starting with configuration errors")
 
-    def post_notice(self, msg: str, resource: Optional[Resource]=None) -> None:
+    def post_notice(self, msg: str, resource: Optional[Resource] = None) -> None:
         if resource is None:
             resource = self.current_resource
 
@@ -292,7 +305,7 @@ class Config:
         self.logger.info("%s: NOTICE: %s" % (rkey, msg))
 
     @multi
-    def post_error(self, msg: Union[RichStatus, str], resource: Optional[Resource]=None, rkey: Optional[str]=None) -> str:
+    def post_error(self, msg: Union[RichStatus, str], resource: Optional[Resource] = None, rkey: Optional[str] = None) -> str:
         del resource    # silence warnings
         del rkey
 
@@ -304,13 +317,13 @@ class Config:
             return type(msg).__name__
 
     @post_error.when('string')
-    def post_error_string(self, msg: str, resource: Optional[Resource]=None, rkey: Optional[str]=None):
+    def post_error_string(self, msg: str, resource: Optional[Resource] = None, rkey: Optional[str] = None):
         rc = RichStatus.fromError(msg)
 
         self.post_error(rc, resource=resource)
 
     @post_error.when('RichStatus')
-    def post_error_richstatus(self, rc: RichStatus, resource: Optional[Resource]=None, rkey: Optional[str]=None):
+    def post_error_richstatus(self, rc: RichStatus, resource: Optional[Resource] = None, rkey: Optional[str] = None):
         if resource is None:
             resource = self.current_resource
 
@@ -368,7 +381,8 @@ class Config:
             handler = getattr(self, handler_name, None)
 
             if not handler:
-                self.logger.warning("%s: no handler for %s, just saving" % (resource, resource.kind))
+                self.logger.warning(
+                    "%s: no handler for %s, just saving" % (resource, resource.kind))
                 handler = self.save_object
             # else:
             #     self.logger.debug("%s: handling %s..." % (resource, resource.kind))
@@ -418,7 +432,8 @@ class Config:
             status = Config.SupportedVersions.get(version, 'is not supported')
 
             if status != 'ok':
-                self.post_notice(f"apiVersion {originalApiVersion} {status}", resource=resource)
+                self.post_notice(
+                    f"apiVersion {originalApiVersion} {status}", resource=resource)
 
         if resource.kind.lower() in Config.NoSchema:
             return RichStatus.OK(msg=f"no schema for {resource.kind} so calling it good")
@@ -441,7 +456,8 @@ class Config:
                 if schema:
                     self.schemas[schema_key] = typecast(Dict[Any, Any], schema)
             except OSError:
-                self.logger.debug("no schema at %s, not validating" % schema_path)
+                self.logger.debug(
+                    "no schema at %s, not validating" % schema_path)
             except json.decoder.JSONDecodeError as e:
                 self.logger.warning("corrupt schema at %s, skipping (%s)" %
                                     (schema_path, e))
@@ -457,7 +473,7 @@ class Config:
         # All good. Return an OK.
         return RichStatus.OK(msg="valid %s" % resource.kind)
 
-    def safe_store(self, storage_name: str, resource: ACResource, allow_log: bool=True) -> None:
+    def safe_store(self, storage_name: str, resource: ACResource, allow_log: bool = True) -> None:
         """
         Safely store a ACResource under a given storage name. The storage_name is separate
         because we may need to e.g. store a Module under the 'ratelimit' name or the like.
@@ -473,7 +489,8 @@ class Config:
         if resource.name in storage:
             # Oooops.
             self.post_error("%s defines %s %s, which is already defined by %s" %
-                            (resource, resource.kind, resource.name, storage[resource.name].location),
+                            (resource, resource.kind, resource.name,
+                             storage[resource.name].location),
                             resource=resource)
 
         if allow_log:
@@ -482,7 +499,7 @@ class Config:
 
         storage[resource.name] = resource
 
-    def save_object(self, resource: ACResource, allow_log: bool=False) -> None:
+    def save_object(self, resource: ACResource, allow_log: bool = False) -> None:
         """
         Saves a ACResource using its kind as the storage class name. Sort of the
         defaulted version of safe_store.
@@ -511,7 +528,7 @@ class Config:
         else:
             return None
 
-    def module_lookup(self, module_name: str, key: str, default: Any=None) -> Any:
+    def module_lookup(self, module_name: str, key: str, default: Any = None) -> Any:
         """
         Look up a specific key in a given module. If the named module doesn't 
         exist, or if the key doesn't exist in the module, return the default.
@@ -538,7 +555,8 @@ class Config:
         # indeed show a human the YAML that defined this module.
         #
         # XXX This should be Module.from_resource()...
-        module_resource = ACResource.from_resource(resource, kind="Module", **resource.config)
+        module_resource = ACResource.from_resource(
+            resource, kind="Module", **resource.config)
 
         self.safe_store("modules", module_resource)
 
@@ -555,7 +573,8 @@ class Config:
 
         if key in storage:
             self.post_error("%s defines %s %s, which is already defined by %s" %
-                            (resource, resource.kind, key, storage[key].location),
+                            (resource, resource.kind,
+                             key, storage[key].location),
                             resource=resource)
 
         storage[key] = resource
@@ -566,7 +585,8 @@ class Config:
 
         if key in storage:
             self.post_error("%s defines %s %s, which is already defined by %s" %
-                            (resource, resource.kind, key, storage[key].location),
+                            (resource, resource.kind,
+                             key, storage[key].location),
                             resource=resource)
 
         storage[key] = resource
@@ -582,7 +602,8 @@ class Config:
 
         if key in storage:
             self.post_error("%s defines %s %s, which is already defined by %s" %
-                            (resource, resource.kind, key, storage[key].location),
+                            (resource, resource.kind,
+                             key, storage[key].location),
                             resource=resource)
 
         self.logger.debug("%s: saving %s %s" %
