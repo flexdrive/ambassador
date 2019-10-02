@@ -111,6 +111,7 @@ class Config:
 
         self.statsd: Dict[str, Any] = {
             'enabled': (os.environ.get('STATSD_ENABLED', '').lower() == 'true'),
+            'prefix': (os.environ.get('STATSD_PREFIX', '').lower() == 'true'),
             'dogstatsd': (os.environ.get('DOGSTATSD', '').lower() == 'true')
         }
 

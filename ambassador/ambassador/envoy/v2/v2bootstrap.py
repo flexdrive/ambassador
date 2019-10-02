@@ -22,14 +22,14 @@ class V2Bootstrap(dict):
             "dynamic_resources": {
                 "ads_config": {
                     "api_type": "GRPC",
-                    "grpc_services": [ {
+                    "grpc_services": [{
                         "envoy_grpc": {
                             "cluster_name": "xds_cluster"
                         }
-                    } ]
+                    }]
                 },
-                "cds_config": { "ads": {} },
-                "lds_config": { "ads": {} }
+                "cds_config": {"ads": {}},
+                "lds_config": {"ads": {}}
             },
             "admin": dict(config.admin)
         })
@@ -68,7 +68,8 @@ class V2Bootstrap(dict):
             tracing = typecast(IRTracing, config.ir.tracing)
 
             assert tracing.cluster
-            clusters.append(V2Cluster(config, typecast(IRCluster, tracing.cluster)))
+            clusters.append(
+                V2Cluster(config, typecast(IRCluster, tracing.cluster)))
 
         # if config.ratelimit:
         #     self['rate_limit_service'] = dict(config.ratelimit)
@@ -94,6 +95,9 @@ class V2Bootstrap(dict):
                     }
                 }
             ]
+
+            if config.ir.statsd['prefix']:
+                self['stats_sinks']['config']['prefix'] = config.ir.statsd['prefix']
 
             self['stats_flush_interval'] = {
                 'seconds': config.ir.statsd['interval']
